@@ -416,3 +416,50 @@ ORDER BY (
 ) DESC
 
 
+
+
+
+/*1)Escriba una consulta SQL que retorne un ranking de facturacion por año y zona
+devolviendo las siguientes columnas:
+
+- AÑO
+- COD DE ZONA
+- DETALLE DE ZONA
+- CANT DE DEPOSITOS DE LA ZONA
+- CANT DE EMPLEADOS DE DEPARTAMENTOS DE ESA ZONA
+- EMPLEADO QUE MAS VENDIO EN ESE AÑO Y ESA ZONA
+- MONTO TOTAL DE VENTA DE ESA ZONA EN ESE AÑO
+- PORCENTAJE DE LA VENTA DE ESE AÑO EN ESA ZONA RESPECTO AL TOTAL VENDIDO DE ESE AÑO
+
+Los datos deberan estar ordenados por año y dentro del año por la zona con mas facturacion
+de mayor a menor */
+
+SELECT 
+    YEAR(f.fact_fecha),
+    z.zona_codigo,
+    z.zona_detalle,
+    COUNT(DISTINCT d.depo_codigo) AS 'CANT DE DEPOSITOS DE LA ZONA',
+    COUNT(DISTINCT e.empl_codigo) AS 'CANT DE EMPLEADOS DE DEPARTAMENTOS DE ESA ZONA',
+    (SELECT TOP 1 e2.empl_codigo 
+    FROM Empleado e2
+        JOIN Departamento d2 ON d2.depa_codigo = e2.empl_departamento
+        JOIN Zona z2 ON z2.zona_codigo = d2.depa_zona
+        JOIN Factura f2 ON f2.fact_vendedor = e2.empl_codigo
+    WHERE YEAR(f2.fact_fecha) = YEAR(f.fact_fecha) and z2.zona_codigo = z.zona_codigo
+    GROUP BY e2.empl_codigo
+    ORDER BY (SUM f2.fact_total) DESC    
+    ) AS 'EMPLEADO QUE MAS VENDIO EN ESE AÑO Y ESA ZONA',
+    ISNULL(SUM (f.fact_total),0) AS 'MONTO TOTAL DE LA VENTA DE LA ZONA',
+    (SELECT (SUM f3.fact_total) / (SELECT TOP 1 SUM(f3.fact_total) FROM factura F3 WHERE YEAR(f3.fact_fecha) = YEAR(f.fact_fecha)) * 100) AS 'Porcentaje de la venta de ese año respecto al total vendido'
+    
+    
+    FROM Factura f
+    JOIN Empleado e ON e.empl_codigo= f.fact_vendedor
+    JOIN Departamento depa ON depa.depa_codigo = e.empl_departamento
+    JOIN Zona z ON z.zona_codigo = depa.depa_zona
+    JOIN Deposito d ON d.depo_zona = z.zona_codigo
+    
+    GROUP BY YEAR(f.fact_fecha),
+    z.zona_codigo,
+    z.zona_detalle
+    ORDER BY YEAR(f.fact_fecha), SUM(f.fact_total) DESC
