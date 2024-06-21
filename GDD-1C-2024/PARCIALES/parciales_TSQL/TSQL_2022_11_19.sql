@@ -50,6 +50,12 @@ DECLARE cursor_precio_producto CURSOR FOR
 		SET @precio_tabla_producto = (SELECT p.prod_precio FROM Producto p 
 										WHERE p.prod_codigo = @producto) 
 		IF @precio != @precio_tabla_producto
+		--tambien puedo hacer asi:
+		IF (@item_precio <> (SELECT p.prod_precio FROM Producto p
+						WHERE @producto = p.prod_codigo))		
+
+
+						
 		BEGIN
 			INSERT INTO item_factura_precio_erroneo ( err_tipo, err_sucursal, err_factura, err_producto, err_precio_erroneo)
 				VALUES( @tipo, @sucursal, @factura_nro, @producto, @precio)
