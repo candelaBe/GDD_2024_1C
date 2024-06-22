@@ -463,3 +463,99 @@ SELECT
     z.zona_codigo,
     z.zona_detalle
     ORDER BY YEAR(f.fact_fecha), SUM(f.fact_total) DESC
+
+
+	/* Se solicita una estadistica por año y familia, para ello se debera mostrar:
+
+Año, codigo de familia, detalle de la familia, cantidad de facturas, cantidad de productos con composicion vendidos, monto total vendido
+
+Solo se deberan considerar las familias que tengan al menos un producto con composicion y que se haya vendido conjuntamente (en la misma
+factura) con otra familia distinta
+*/
+
+SELECT 
+    YEAR(f.fact_fecha),
+    fa.fami_id,
+    fa.fami_detalle,
+    COUNT(DISTINCT f.fact_tipo+f.fact_sucursal+f.fact_numero),
+    (SELECT COUNT(c2.comp_producto) FROM Composicion c2 
+        JOIN Producto p2 ON p2.prod_codigo = c2.comp_producto
+        JOIN Item_Factura it2 ON it2.item_producto = p2.prod_codigo
+        JOIN Factura f2 on f2.fact_tipo + f2.fact_numero + f2.fact_sucursal = it2.item_tipo + it2.item_numero + it2.item_sucursal
+    WHERE fa.fami_id = p2.prod_familia AND YEAR(f.fact_fecha) = YEAR(f2.fact_fecha)),
+    SUM(it.item_precio * it.item_cantidad)
+    FROM Factura f
+    JOIN Item_Factura it ON f.fact_tipo + f.fact_numero + f.fact_sucursal = it.item_tipo + it.item_numero + it.item_sucursal
+    JOIN Producto p ON p.prod_codigo = it.item_producto
+    JOIN Familia fa ON p.prod_familia = fa.fami_id
+    WHERE prod_codigo IN (SELECT c3.comp_producto FROM Composicion c3 
+                          JOIN Item_Factura it3 ON c3.comp_producto = it3.item_producto 
+                          JOIN Factura f3 ON f3.fact_tipo + f3.fact_numero + f3.fact_sucursal = it3.item_tipo + it3.item_numero + it3.item_sucursal
+                          JOIN Producto p3 ON p3.prod_codigo = c3.comp_producto
+                          WHERE f3.fact_tipo + f3.fact_numero + f3.fact_sucursal = f.fact_tipo + f.fact_numero + f.fact_sucursal 
+                            AND fa.fami_id != p3.prod_familia)
+   GROUP BY YEAR(f.fact_fecha), fa.fami_id, fa.fami_detalle
+
+   /*SELECT YEAR(f1.fact_fecha),
+	   fa1.fami_id,
+	   fa1.fami_detalle,
+	   COUNT(DISTINCT f1.fact_tipo + f1.fact_sucursal + f1.fact_numero),
+	   (SELECT COUNT(prod_codigo)
+		FROM Producto
+		WHERE prod_codigo IN (SELECT comp_producto FROM Composicion)) AS prod_compuestos_vendidos,
+		SUM(i1.item_cantidad * i1.item_precio) AS monto_total
+FROM Factura f1 
+	JOIN Item_Factura i1 ON (i1.item_tipo + i1.item_sucursal + i1.item_numero = f1.fact_tipo + f1.fact_sucursal + f1.fact_numero)
+	JOIN Producto p1 ON (p1.prod_codigo = i1.item_producto)
+	JOIN Familia fa1 ON (p1.prod_familia = fa1.fami_id),
+	Factura f2
+	JOIN Item_Factura i2 ON (i2.item_tipo + i2.item_sucursal + i2.item_numero = f2.fact_tipo + f2.fact_sucursal + f2.fact_numero)
+	JOIN Producto p2 ON (p2.prod_codigo = i2.item_producto)
+	JOIN Familia fa2 ON (p2.prod_familia = fa2.fami_id)
+WHERE fa1.fami_id IN (SELECT prod_familia FROM Producto
+					  WHERE prod_codigo IN (SELECT comp_producto FROM Composicion))
+					  AND fa1.fami_id > fa2.fami_id
+					  AND (i1.item_tipo + i1.item_sucursal + i1.item_numero) = (i2.item_tipo + i2.item_sucursal + i2.item_numero)
+GROUP BY YEAR(f1.fact_fecha), fa1.fami_id, fa1.fami_detalle*/
+
+
+/* Con el fin de analizar el posicionamiento de ciertos productos se necesita mostrar solo los 5 rubros de productos mas vendidos
+y ademas, por cada uno de estos rubros saber cual es el producto mas exitoso (es decir, con mas ventas) y si el mismo es simple
+o compuesto. Por otro lado se pide se indique si hay "stock disponible" o si hay "faltante" para afrontar las ventas del proximo
+mes. Considerar que se estima que la venta aumente en un 10% respecto del mes de diciembre del año pasado
+*/
+
+SELECT TOP 5 
+    r.rubr_id,
+    (SELECT TOP 1 p2.prod_codigo FROM Producto p2 
+        JOIN Item_Factura it2 ON it2.item_producto = p2.prod_codigo
+     WHERE p2.prod_rubro = r.rubro_id
+     GROUP BY p2.prod_codigo
+     ORDER BY SUM(it2.item_precio * it2.item_cantidad) DESC) AS 'Producto mas exitoso',
+    (CASE WHEN (SELECT TOP 1 p2.prod_codigo FROM Producto p2 
+        JOIN Item_Factura it2 ON it2.item_producto = p2.prod_codigo
+     WHERE p2.prod_rubro = r.rubro_id
+     GROUP BY p2.prod_codigo
+     ORDER BY SUM(it2.item_precio * it2.item_cantidad) DESC) IN (SELECT c2.comp_producto FROM Composicion c2) 
+        THEN 'Producto Compuesto' ELSE 'Producto Simple' END ),
+    (CASE WHEN ((SELECT SUM(stoc_cantidad) FROM STOCK 
+                WHERE stoc_producto = (SELECT TOP 1 p2.prod_codigo FROM Producto p2 
+                                        JOIN Item_Factura it2 ON it2.item_producto = p2.prod_codigo
+                                       WHERE p2.prod_rubro = r.rubro_id
+                                       GROUP BY p2.prod_codigo
+                                       ORDER BY SUM(it2.item_precio * it2.item_cantidad) DESC))
+                                       > 
+                (SELECT SUM(it3.item_cantidad) FROM Item_Factura it3
+                JOIN Factura f3 ON it3.item_tipo + it3.item_sucursal + it3.item_numero = f3.fact_tipo + f3.fact_sucursal + f3.fact_numero
+                WHERE MONTH(f3.fact_fecha) = 12 AND YEAR(f3.fact_fecha) = YEAR(CURRENT_TIMESTAMP) - 1 
+                    AND item_producto = (SELECT TOP 1 p2.prod_codigo FROM Producto p2 
+                                        JOIN Item_Factura it2 ON it2.item_producto = p2.prod_codigo
+                                        WHERE p2.prod_rubro = r.rubro_id
+                                        GROUP BY p2.prod_codigo
+                                        ORDER BY SUM(it2.item_precio * it2.item_cantidad) DESC) * 1.1)            
+                                       )    THEN 'Stock Disponible' ELSE 'Stock Faltante' END)
+    FROM Rubro r
+    JOIN Producto p ON p.prod_rubro = r.rubr_id
+    JOIN Item_Factura it ON it.item_producto = p.prod_codigo
+    GROUP BY r.rubr_id
+    ORDER BY SUM(it.item_cantidad) DESC
